@@ -1,0 +1,543 @@
+{% extends "base.html" %}
+
+{% block title %}Inverter Comparison - Inverter Performance Monitoring{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Inverter Selection</h5>
+                <div id="inverter-selection" class="mb-3">
+                    <!-- Inverter checkboxes will be dynamically populated -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Efficiency Comparison -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Efficiency Comparison</h5>
+                <div id="efficiency-comparison-chart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Power Output Comparison -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Power Output Comparison</h5>
+                <div id="power-comparison-chart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Fault Rate Comparison -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Fault Rate Comparison</h5>
+                <div id="fault-comparison-chart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Uptime Comparison -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Uptime Comparison</h5>
+                <div id="uptime-comparison-chart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Detailed Comparison</h5>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Inverter ID</th>
+                                <th>Efficiency</th>
+                                <th>Total Energy (kWh)</th>
+                                <th>Fault Count</th>
+                                <th>Uptime (hrs)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="comparison-table-body">
+                            <!-- Table rows will be dynamically populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Global variables
+    let selectedInverters = [];
+    let comparisonData = [];
+    
+    // Charts
+    let efficiencyChart, powerChart, faultChart, uptimeChart;
+    
+    // Initialize page on load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load comparison data
+        loadComparisonData();
+        
+        // Initialize date range picker if needed
+        if (typeof initDateRangePicker === 'function') {
+            initDateRangePicker(refreshComparisonData);
+        }
+    });
+    
+    // Load comparison data
+    function loadComparisonData() {
+        fetch('/api/inverter-comparison')
+            .then(response => response.json())
+            .then(data => {
+                comparisonData = data;
+                
+                // Initialize inverter selection
+                initInverterSelection(data);
+                
+                // Initially select all inverters
+                selectedInverters = data.map(item => item.inverter_id);
+                
+                // Update checkboxes
+                updateCheckboxes();
+                
+                // Update charts
+                updateComparisonCharts();
+                
+                // Update table
+                updateComparisonTable();
+            })
+            .catch(error => {
+                console.error('Error loading comparison data:', error);
+                document.getElementById('inverter-selection').innerHTML = 
+                    '<div class="alert alert-danger">Error loading data. Please try again later.</div>';
+            });
+    }
+    
+    // Initialize inverter selection checkboxes
+    function initInverterSelection(data) {
+        const container = document.getElementById('inverter-selection');
+        container.innerHTML = '';
+        
+        // Create a checkbox for each inverter
+        data.forEach(inverter => {
+            const checkboxId = `inverter-${inverter.inverter_id}`;
+            
+            const checkboxDiv = document.createElement('div');
+            checkboxDiv.className = 'form-check form-check-inline';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'form-check-input';
+            checkbox.id = checkboxId;
+            checkbox.value = inverter.inverter_id;
+            checkbox.checked = true;
+            checkbox.addEventListener('change', handleInverterSelection);
+            
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = checkboxId;
+            label.textContent = inverter.inverter_id;
+            
+            checkboxDiv.appendChild(checkbox);
+            checkboxDiv.appendChild(label);
+            container.appendChild(checkboxDiv);
+        });
+        
+        // Add "Select All" checkbox
+        const selectAllDiv = document.createElement('div');
+        selectAllDiv.className = 'form-check form-check-inline';
+        
+        const selectAllCheckbox = document.createElement('input');
+        selectAllCheckbox.type = 'checkbox';
+        selectAllCheckbox.className = 'form-check-input';
+        selectAllCheckbox.id = 'select-all';
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.addEventListener('change', handleSelectAll);
+        
+        const selectAllLabel = document.createElement('label');
+        selectAllLabel.className = 'form-check-label';
+        selectAllLabel.htmlFor = 'select-all';
+        selectAllLabel.textContent = 'Select All';
+        
+        selectAllDiv.appendChild(selectAllCheckbox);
+        selectAllDiv.appendChild(selectAllLabel);
+        container.appendChild(selectAllDiv);
+    }
+    
+    // Handle inverter selection
+    function handleInverterSelection(event) {
+        const inverterId = event.target.value;
+        const isChecked = event.target.checked;
+        
+        if (isChecked) {
+            // Add inverter to selection if not already included
+            if (!selectedInverters.includes(inverterId)) {
+                selectedInverters.push(inverterId);
+            }
+        } else {
+            // Remove inverter from selection
+            selectedInverters = selectedInverters.filter(id => id !== inverterId);
+        }
+        
+        // Update "Select All" checkbox
+        document.getElementById('select-all').checked = 
+            selectedInverters.length === comparisonData.length;
+        
+        // Update charts
+        updateComparisonCharts();
+        
+        // Update table
+        updateComparisonTable();
+    }
+    
+    // Handle select all
+    function handleSelectAll(event) {
+        const isChecked = event.target.checked;
+        
+        if (isChecked) {
+            // Select all inverters
+            selectedInverters = comparisonData.map(item => item.inverter_id);
+        } else {
+            // Deselect all inverters
+            selectedInverters = [];
+        }
+        
+        // Update checkboxes
+        updateCheckboxes();
+        
+        // Update charts
+        updateComparisonCharts();
+        
+        // Update table
+        updateComparisonTable();
+    }
+    
+    // Update checkboxes
+    function updateCheckboxes() {
+        comparisonData.forEach(inverter => {
+            const checkbox = document.getElementById(`inverter-${inverter.inverter_id}`);
+            if (checkbox) {
+                checkbox.checked = selectedInverters.includes(inverter.inverter_id);
+            }
+        });
+    }
+    
+    // Update comparison charts
+    function updateComparisonCharts() {
+        // Filter data for selected inverters
+        const filteredData = comparisonData.filter(item => 
+            selectedInverters.includes(item.inverter_id));
+        
+        // Update efficiency comparison chart
+        updateEfficiencyChart(filteredData);
+        
+        // Update power output comparison chart
+        updatePowerChart(filteredData);
+        
+        // Update fault rate comparison chart
+        updateFaultChart(filteredData);
+        
+        // Update uptime comparison chart
+        updateUptimeChart(filteredData);
+    }
+    
+    // Update efficiency comparison chart
+    function updateEfficiencyChart(data) {
+        const options = {
+            series: [{
+                name: 'Efficiency',
+                data: data.map(item => (item.efficiency * 100).toFixed(1))
+            }],
+            chart: {
+                type: 'bar',
+                height: 300,
+                toolbar: {
+                    show: true
+                }
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '55%',
+                    borderRadius: 5
+                }
+            },
+            dataLabels: {
+                enabled: false
+            },
+            colors: ['#0078d4'],
+            xaxis: {
+                categories: data.map(item => item.inverter_id),
+                labels: {
+                    style: {
+                        fontSize: '12px'
+                    }
+                }
+            },
+            yaxis: {
+                title: {
+                    text: 'Efficiency (%)'
+                },
+                min: 80,
+                max: 100
+            },
+            tooltip: {
+                y: {
+                    formatter: function(val) {
+                        return val + "%";
+                    }
+                }
+            }
+        };
+        
+        if (efficiencyChart) {
+            efficiencyChart.updateOptions(options);
+        } else {
+            efficiencyChart = new ApexCharts(document.querySelector("#efficiency-comparison-chart"), options);
+            efficiencyChart.render();
+        }
+    }
+    
+    // Update power output comparison chart
+    function updatePowerChart(data) {
+        const options = {
+            series: [{
+                name: 'Total Energy',
+                data: data.map(item => item.total_energy.toFixed(1))
+            }],
+            chart: {
+                type: 'bar',
+                height: 300,
+                toolbar: {
+                    show: true
+                }
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '55%',
+                    borderRadius: 5
+                }
+            },
+            dataLabels: {
+                enabled: false
+            },
+            colors: ['#33aa55'],
+            xaxis: {
+                categories: data.map(item => item.inverter_id),
+                labels: {
+                    style: {
+                        fontSize: '12px'
+                    }
+                }
+            },
+            yaxis: {
+                title: {
+                    text: 'Energy (kWh)'
+                }
+            },
+            tooltip: {
+                y: {
+                    formatter: function(val) {
+                        return val + " kWh";
+                    }
+                }
+            }
+        };
+        
+        if (powerChart) {
+            powerChart.updateOptions(options);
+        } else {
+            powerChart = new ApexCharts(document.querySelector("#power-comparison-chart"), options);
+            powerChart.render();
+        }
+    }
+    
+    // Update fault rate comparison chart
+    function updateFaultChart(data) {
+        const options = {
+            series: [{
+                name: 'Total Faults',
+                data: data.map(item => item.total_faults)
+            }],
+            chart: {
+                type: 'bar',
+                height: 300,
+                toolbar: {
+                    show: true
+                }
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '55%',
+                    borderRadius: 5
+                }
+            },
+            dataLabels: {
+                enabled: false
+            },
+            colors: ['#ff5630'],
+            xaxis: {
+                categories: data.map(item => item.inverter_id),
+                labels: {
+                    style: {
+                        fontSize: '12px'
+                    }
+                }
+            },
+            yaxis: {
+                title: {
+                    text: 'Faults'
+                }
+            }
+        };
+        
+        if (faultChart) {
+            faultChart.updateOptions(options);
+        } else {
+            faultChart = new ApexCharts(document.querySelector("#fault-comparison-chart"), options);
+            faultChart.render();
+        }
+    }
+    
+    // Update uptime comparison chart
+    function updateUptimeChart(data) {
+        const options = {
+            series: [{
+                name: 'Uptime',
+                data: data.map(item => item.uptime.toFixed(1))
+            }],
+            chart: {
+                type: 'bar',
+                height: 300,
+                toolbar: {
+                    show: true
+                }
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '55%',
+                    borderRadius: 5
+                }
+            },
+            dataLabels: {
+                enabled: false
+            },
+            colors: ['#8b5cf6'],
+            xaxis: {
+                categories: data.map(item => item.inverter_id),
+                labels: {
+                    style: {
+                        fontSize: '12px'
+                    }
+                }
+            },
+            yaxis: {
+                title: {
+                    text: 'Uptime (hours)'
+                }
+            },
+            tooltip: {
+                y: {
+                    formatter: function(val) {
+                        return val + " hrs";
+                    }
+                }
+            }
+        };
+        
+        if (uptimeChart) {
+            uptimeChart.updateOptions(options);
+        } else {
+            uptimeChart = new ApexCharts(document.querySelector("#uptime-comparison-chart"), options);
+            uptimeChart.render();
+        }
+    }
+    
+    // Update comparison table
+    function updateComparisonTable() {
+        const tableBody = document.getElementById('comparison-table-body');
+        tableBody.innerHTML = '';
+        
+        // Filter data for selected inverters
+        const filteredData = comparisonData.filter(item => 
+            selectedInverters.includes(item.inverter_id));
+        
+        // Sort by efficiency (highest first)
+        filteredData.sort((a, b) => b.efficiency - a.efficiency);
+        
+        // Create table rows
+        filteredData.forEach(inverter => {
+            const row = document.createElement('tr');
+            
+            // Determine status based on fault count
+            let status, statusClass;
+            if (inverter.total_faults > 5) {
+                status = 'Urgent';
+                statusClass = 'status-urgent';
+            } else if (inverter.total_faults > 2) {
+                status = 'Monitor';
+                statusClass = 'status-monitor';
+            } else {
+                status = 'Healthy';
+                statusClass = 'status-healthy';
+            }
+            
+            row.innerHTML = `
+                <td>${inverter.inverter_id}</td>
+                <td>${(inverter.efficiency * 100).toFixed(1)}%</td>
+                <td>${inverter.total_energy.toFixed(1)}</td>
+                <td>${inverter.total_faults}</td>
+                <td>${inverter.uptime.toFixed(1)}</td>
+                <td><span class="status-badge ${statusClass}">${status}</span></td>
+            `;
+            
+            tableBody.appendChild(row);
+        });
+    }
+    
+    // Refresh comparison data
+    function refreshComparisonData(start, end) {
+        const days = getDaysBetween(start, end);
+        
+        fetch(`/api/inverter-comparison?days=${days}`)
+            .then(response => response.json())
+            .then(data => {
+                comparisonData = data;
+                
+                // Update charts
+                updateComparisonCharts();
+                
+                // Update table
+                updateComparisonTable();
+            })
+            .catch(error => console.error('Error refreshing comparison data:', error));
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,548 @@
+{% extends "base.html" %}
+
+{% block title %}Overview - Inverter Performance Monitoring{% endblock %}
+
+{% block content %}
+<!-- KPI Cards Row -->
+<div class="row mb-4">
+    <!-- Total Energy Generated -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title text-muted">Total Energy Generated</h5>
+                <h2 class="card-text" id="total-energy">--</h2>
+                <p class="card-text">
+                    <span id="energy-trend" class="trend"></span> 
+                    <span class="text-muted">vs. Last Month</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Average System Efficiency -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title text-muted">Average System Efficiency</h5>
+                <h2 class="card-text" id="avg-efficiency">--</h2>
+                <p class="card-text">
+                    <span id="efficiency-trend" class="trend"></span> 
+                    <span class="text-muted">vs. Last Month</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Total Faults -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title text-muted">Total Faults (Last 7 Days)</h5>
+                <h2 class="card-text" id="total-faults">--</h2>
+                <p class="card-text">
+                    <span id="faults-trend" class="trend"></span> 
+                    <span class="text-muted">vs. Previous Week</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Inverters Requiring Maintenance -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title text-muted">Inverters Requiring Maintenance</h5>
+                <h2 class="card-text" id="maintenance-count">--</h2>
+                <p class="card-text" id="maintenance-message">
+                    <span class="text-muted">Maintenance status</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <!-- Energy Generation Trend -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Energy Generation Trend</h5>
+                <div id="energy-chart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Efficiency vs Temperature -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Efficiency vs Temperature</h5>
+                <div id="efficiency-temp-chart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bottom Charts Row -->
+<div class="row">
+    <!-- Fault Distribution -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Fault Distribution</h5>
+                <div id="fault-chart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Inverter Status -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Inverter Status</h5>
+                <div id="inverter-status" class="row">
+                    <!-- Inverter status gauges will be dynamically added here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .trend-up {
+        color: #36b37e;
+    }
+    .trend-down-good {
+        color: #36b37e;
+    }
+    .trend-down-bad {
+        color: #ff5630;
+    }
+    .trend-up-bad {
+        color: #ff5630;
+    }
+    .gauge-container {
+        position: relative;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .gauge-label {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        transform: translateY(-50%);
+        font-size: 0.9rem;
+    }
+    .gauge-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    .gauge-status {
+        font-size: 0.9rem;
+    }
+    .status-urgent {
+        color: #ff5630;
+    }
+    .status-monitor {
+        color: #ffab00;
+    }
+    .status-healthy {
+        color: #36b37e;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Global variables for charts
+    let energyChart, efficiencyTempChart, faultChart;
+    let startDate = moment().subtract(29, 'days').format('YYYY-MM-DD');
+    let endDate = moment().format('YYYY-MM-DD');
+    
+    // Initialize dashboard on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadKPISummary();
+        loadEnergyGenerationChart();
+        loadEfficiencyTempChart();
+        loadFaultDistributionChart();
+        loadInverterStatus();
+    });
+    
+    // Function to refresh all dashboard data
+    function refreshDashboardData(start, end) {
+        startDate = start;
+        endDate = end;
+        
+        loadKPISummary();
+        loadEnergyGenerationChart();
+        loadEfficiencyTempChart();
+        loadFaultDistributionChart();
+        loadInverterStatus();
+    }
+    
+    // Load KPI summary data
+    function loadKPISummary() {
+        fetch('/api/kpi-summary')
+            .then(response => response.json())
+            .then(data => {
+                // Update KPI values
+                document.getElementById('total-energy').textContent = data.total_energy.toLocaleString() + ' kWh';
+                document.getElementById('avg-efficiency').textContent = data.avg_efficiency.toFixed(1) + '%';
+                document.getElementById('total-faults').textContent = data.total_faults;
+                document.getElementById('maintenance-count').textContent = data.maintenance_count;
+                
+                // Update trends
+                const energyTrend = document.getElementById('energy-trend');
+                if (data.energy_change > 0) {
+                    energyTrend.innerHTML = `<i class="fas fa-arrow-up"></i> ${data.energy_change.toFixed(1)}%`;
+                    energyTrend.className = 'trend trend-up';
+                } else {
+                    energyTrend.innerHTML = `<i class="fas fa-arrow-down"></i> ${Math.abs(data.energy_change).toFixed(1)}%`;
+                    energyTrend.className = 'trend trend-down-bad';
+                }
+                
+                const efficiencyTrend = document.getElementById('efficiency-trend');
+                if (data.efficiency_change > 0) {
+                    efficiencyTrend.innerHTML = `<i class="fas fa-arrow-up"></i> ${data.efficiency_change.toFixed(1)}%`;
+                    efficiencyTrend.className = 'trend trend-up';
+                } else {
+                    efficiencyTrend.innerHTML = `<i class="fas fa-arrow-down"></i> ${Math.abs(data.efficiency_change).toFixed(1)}%`;
+                    efficiencyTrend.className = 'trend trend-down-bad';
+                }
+                
+                const faultsTrend = document.getElementById('faults-trend');
+                if (data.faults_change > 0) {
+                    faultsTrend.innerHTML = `<i class="fas fa-arrow-up"></i> ${data.faults_change}`;
+                    faultsTrend.className = 'trend trend-up-bad';
+                } else {
+                    faultsTrend.innerHTML = `<i class="fas fa-arrow-down"></i> ${Math.abs(data.faults_change)}`;
+                    faultsTrend.className = 'trend trend-down-good';
+                }
+                
+                // Update maintenance message
+                if (data.maintenance_count > 0) {
+                    document.getElementById('maintenance-message').innerHTML = 
+                        `<span class="text-danger">${data.maintenance_count} inverter(s) need attention</span>`;
+                } else {
+                    document.getElementById('maintenance-message').innerHTML = 
+                        `<span class="text-success">All systems nominal</span>`;
+                }
+            })
+            .catch(error => console.error('Error loading KPI summary:', error));
+    }
+    
+    // Load Energy Generation Chart
+    function loadEnergyGenerationChart() {
+        fetch(`/api/energy-generation?days=30`)
+            .then(response => response.json())
+            .then(data => {
+                // Process data for chart
+                const dates = [...new Set(data.map(item => item.date))].sort();
+                const inverters = [...new Set(data.map(item => item.inverter_id))];
+                
+                const seriesData = inverters.map(inverterId => {
+                    return {
+                        name: inverterId,
+                        data: dates.map(date => {
+                            const dataPoint = data.find(item => item.date === date && item.inverter_id === inverterId);
+                            return dataPoint ? dataPoint.energy : 0;
+                        })
+                    };
+                });
+                
+                // Create or update chart
+                const options = {
+                    series: seriesData,
+                    chart: {
+                        type: 'line',
+                        height: 300,
+                        toolbar: {
+                            show: true,
+                            tools: {
+                                download: true,
+                                selection: true,
+                                zoom: true,
+                                zoomin: true,
+                                zoomout: true,
+                                pan: true,
+                            }
+                        }
+                    },
+                    stroke: {
+                        curve: 'smooth',
+                        width: 2
+                    },
+                    xaxis: {
+                        categories: dates,
+                        labels: {
+                            rotate: -45,
+                            style: {
+                                fontSize: '10px'
+                            }
+                        }
+                    },
+                    yaxis: {
+                        title: {
+                            text: 'Energy (kWh)'
+                        }
+                    },
+                    tooltip: {
+                        y: {
+                            formatter: function(value) {
+                                return value.toFixed(2) + ' kWh';
+                            }
+                        }
+                    },
+                    legend: {
+                        position: 'top'
+                    }
+                };
+                
+                if (energyChart) {
+                    energyChart.updateOptions(options);
+                } else {
+                    energyChart = new ApexCharts(document.querySelector("#energy-chart"), options);
+                    energyChart.render();
+                }
+            })
+            .catch(error => console.error('Error loading energy generation data:', error));
+    }
+    
+    // Load Efficiency vs Temperature Chart
+    function loadEfficiencyTempChart() {
+        fetch(`/api/efficiency-temp?days=30`)
+            .then(response => response.json())
+            .then(data => {
+                // Process data for scatter chart
+                const inverters = [...new Set(data.map(item => item.inverter_id))];
+                
+                const seriesData = inverters.map(inverterId => {
+                    const inverterData = data.filter(item => item.inverter_id === inverterId);
+                    return {
+                        name: inverterId,
+                        data: inverterData.map(item => ({
+                            x: item.temperature,
+                            y: (item.efficiency * 100).toFixed(1)
+                        }))
+                    };
+                });
+                
+                // Create or update chart
+                const options = {
+                    series: seriesData,
+                    chart: {
+                        type: 'scatter',
+                        height: 300,
+                        zoom: {
+                            enabled: true,
+                            type: 'xy'
+                        },
+                        toolbar: {
+                            show: true
+                        }
+                    },
+                    xaxis: {
+                        title: {
+                            text: 'Temperature (°C)'
+                        },
+                        min: 30,
+                        max: 80
+                    },
+                    yaxis: {
+                        title: {
+                            text: 'Efficiency (%)'
+                        },
+                        min: 80,
+                        max: 100
+                    },
+                    tooltip: {
+                        custom: function({series, seriesIndex, dataPointIndex, w}) {
+                            const data = w.config.series[seriesIndex].data[dataPointIndex];
+                            return `<div class="p-2">
+                                <div>${w.config.series[seriesIndex].name}</div>
+                                <div>Temp: ${data.x}°C</div>
+                                <div>Efficiency: ${data.y}%</div>
+                            </div>`;
+                        }
+                    },
+                    markers: {
+                        size: 5
+                    },
+                    legend: {
+                        position: 'top'
+                    }
+                };
+                
+                if (efficiencyTempChart) {
+                    efficiencyTempChart.updateOptions(options);
+                } else {
+                    efficiencyTempChart = new ApexCharts(document.querySelector("#efficiency-temp-chart"), options);
+                    efficiencyTempChart.render();
+                }
+            })
+            .catch(error => console.error('Error loading efficiency vs temperature data:', error));
+    }
+    
+    // Load Fault Distribution Chart
+    function loadFaultDistributionChart() {
+        fetch(`/api/fault-distribution?days=30`)
+            .then(response => response.json())
+            .then(data => {
+                // Process data for donut chart
+                const labels = data.map(item => item.type);
+                const values = data.map(item => item.count);
+                
+                // Define colors for fault types
+                const colors = ['#ff5630', '#ffab00', '#36b37e', '#0052cc'];
+                
+                // Create or update chart
+                const options = {
+                    series: values,
+                    chart: {
+                        type: 'donut',
+                        height: 300
+                    },
+                    labels: labels,
+                    colors: colors,
+                    plotOptions: {
+                        pie: {
+                            donut: {
+                                size: '60%',
+                                labels: {
+                                    show: true,
+                                    total: {
+                                        show: true,
+                                        label: 'Total Faults',
+                                        formatter: function(w) {
+                                            return w.globals.seriesTotals.reduce((a, b) => a + b, 0);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function(val) {
+                            return val.toFixed(1) + '%';
+                        }
+                    },
+                    legend: {
+                        position: 'bottom',
+                        formatter: function(seriesName, opts) {
+                            return [seriesName, ": ", opts.w.globals.series[opts.seriesIndex]];
+                        }
+                    }
+                };
+                
+                if (faultChart) {
+                    faultChart.updateOptions(options);
+                } else {
+                    faultChart = new ApexCharts(document.querySelector("#fault-chart"), options);
+                    faultChart.render();
+                }
+            })
+            .catch(error => console.error('Error loading fault distribution data:', error));
+    }
+    
+    // Load Inverter Status
+    function loadInverterStatus() {
+        fetch('/api/inverter-status')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('inverter-status');
+                container.innerHTML = '';
+                
+                // Create a gauge for each inverter
+                data.forEach(inverter => {
+                    const gaugeDiv = document.createElement('div');
+                    gaugeDiv.className = 'col-md-6 gauge-container';
+                    
+                    // Determine color based on status
+                    let color, percentage;
+                    switch(inverter.status) {
+                        case 'Urgent':
+                            color = '#ff5630';
+                            percentage = 90;
+                            break;
+                        case 'Monitor':
+                            color = '#ffab00';
+                            percentage = 50;
+                            break;
+                        case 'Healthy':
+                            color = '#36b37e';
+                            percentage = 10;
+                            break;
+                        default:
+                            color = '#0052cc';
+                            percentage = 0;
+                    }
+                    
+                    // Create gauge chart options
+                    const options = {
+                        series: [percentage],
+                        chart: {
+                            height: 150,
+                            type: 'radialBar',
+                        },
+                        plotOptions: {
+                            radialBar: {
+                                hollow: {
+                                    size: '60%',
+                                },
+                                dataLabels: {
+                                    name: {
+                                        show: false
+                                    },
+                                    value: {
+                                        show: false
+                                    }
+                                },
+                                track: {
+                                    background: '#e7e7e7'
+                                }
+                            }
+                        },
+                        colors: [color],
+                        stroke: {
+                            lineCap: 'round'
+                        }
+                    };
+                    
+                    // Create gauge chart container
+                    const chartDiv = document.createElement('div');
+                    chartDiv.id = `gauge-${inverter.inverter_id}`;
+                    gaugeDiv.appendChild(chartDiv);
+                    
+                    // Create label container
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'gauge-label';
+                    
+                    // Create inverter ID
+                    const idSpan = document.createElement('div');
+                    idSpan.className = 'gauge-value';
+                    idSpan.textContent = inverter.inverter_id;
+                    labelDiv.appendChild(idSpan);
+                    
+                    // Create status
+                    const statusSpan = document.createElement('div');
+                    statusSpan.className = `gauge-status status-${inverter.status.toLowerCase()}`;
+                    statusSpan.textContent = inverter.status;
+                    labelDiv.appendChild(statusSpan);
+                    
+                    gaugeDiv.appendChild(labelDiv);
+                    container.appendChild(gaugeDiv);
+                    
+                    // Render gauge chart
+                    const chart = new ApexCharts(document.querySelector(`#gauge-${inverter.inverter_id}`), options);
+                    chart.render();
+                });
+            })
+            .catch(error => console.error('Error loading inverter status data:', error));
+    }
+</script>
+{% endblock %}

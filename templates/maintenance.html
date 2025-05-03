@@ -1,0 +1,865 @@
+{% extends "base.html" %}
+
+{% block title %}Maintenance Dashboard - Inverter Performance Monitoring{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <!-- Maintenance Priority List -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Maintenance Priority List</h5>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Priority</th>
+                                <th>Inverter</th>
+                                <th>Status</th>
+                                <th>Fault Rate</th>
+                                <th>Efficiency Change</th>
+                                <th>Max Temperature</th>
+                                <th>Recommended Date</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="maintenance-table-body">
+                            <!-- Table rows will be dynamically populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Performance Degradation Chart -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Performance Degradation</h5>
+                <div id="degradation-chart" style="height: 350px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Anomaly Detection Chart -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Anomaly Detection</h5>
+                <div id="anomaly-chart" style="height: 350px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Maintenance Calendar -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Maintenance Calendar</h5>
+                <div class="calendar-container" id="maintenance-calendar">
+                    <!-- Calendar will be dynamically generated -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Maintenance Details Modal -->
+<div class="modal fade" id="maintenanceModal" tabindex="-1" aria-labelledby="maintenanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="maintenanceModalLabel">Maintenance Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="maintenance-modal-body">
+                <!-- Modal content will be dynamically generated -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary">Schedule Maintenance</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Calendar Styles */
+    .calendar-container {
+        background-color: white;
+        border-radius: 8px;
+        padding: 15px;
+    }
+    
+    .calendar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    
+    .calendar-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+    }
+    
+    .calendar-nav {
+        display: flex;
+        gap: 10px;
+    }
+    
+    .calendar-nav button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2rem;
+    }
+    
+    .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 5px;
+    }
+    
+    .calendar-weekday {
+        text-align: center;
+        font-weight: 600;
+        padding: 10px 0;
+        color: #505f79;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .calendar-day {
+        text-align: right;
+        padding: 10px;
+        min-height: 80px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        position: relative;
+    }
+    
+    .calendar-day.current-month {
+        background-color: white;
+        border: 1px solid #eee;
+    }
+    
+    .calendar-day.today {
+        background-color: #f0f7ff;
+        border: 1px solid #0078d4;
+    }
+    
+    .calendar-day-number {
+        font-weight: 500;
+        margin-bottom: 5px;
+    }
+    
+    .maintenance-item {
+        background-color: #e6f7ff;
+        border-left: 3px solid #0078d4;
+        padding: 3px 5px;
+        margin-bottom: 3px;
+        font-size: 0.75rem;
+        border-radius: 2px;
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .maintenance-item.urgent {
+        background-color: #ffe8e6;
+        border-left-color: #ff5630;
+    }
+    
+    .maintenance-item.monitor {
+        background-color: #fff7e6;
+        border-left-color: #ffab00;
+    }
+    
+    /* Status Badge */
+    .status-badge {
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+    
+    /* Action Button */
+    .action-btn {
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Global variables
+    let degradationChart, anomalyChart;
+    let maintenanceData = [];
+    let currentMonth = new Date().getMonth();
+    let currentYear = new Date().getFullYear();
+    
+    // Initialize page on load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load maintenance data
+        loadMaintenanceData();
+        
+        // Initialize date range picker if needed
+        if (typeof initDateRangePicker === 'function') {
+            initDateRangePicker(refreshMaintenanceData);
+        }
+    });
+    
+    // Load maintenance data
+    function loadMaintenanceData() {
+        fetch('/api/maintenance-prediction')
+            .then(response => response.json())
+            .then(data => {
+                maintenanceData = data;
+                
+                // Update priority table
+                updateMaintenanceTable();
+                
+                // Update degradation chart
+                updateDegradationChart();
+                
+                // Update anomaly chart
+                updateAnomalyChart();
+                
+                // Update maintenance calendar
+                updateMaintenanceCalendar();
+            })
+            .catch(error => console.error('Error loading maintenance data:', error));
+    }
+    
+    // Update maintenance priority table
+    function updateMaintenanceTable() {
+        const tableBody = document.getElementById('maintenance-table-body');
+        tableBody.innerHTML = '';
+        
+        // Create table rows
+        maintenanceData.forEach((inverter, index) => {
+            const row = document.createElement('tr');
+            
+            // Add status class
+            if (inverter.status === 'Urgent') {
+                row.className = 'table-danger';
+            } else if (inverter.status === 'Monitor') {
+                row.className = 'table-warning';
+            }
+            
+            // Create status badge
+            let statusBadgeClass = '';
+            switch (inverter.status) {
+                case 'Urgent':
+                    statusBadgeClass = 'bg-danger';
+                    break;
+                case 'Monitor':
+                    statusBadgeClass = 'bg-warning text-dark';
+                    break;
+                case 'Healthy':
+                    statusBadgeClass = 'bg-success';
+                    break;
+            }
+            
+            // Format efficiency change
+            const efficiencyChangeHTML = inverter.efficiency_change >= 0 
+                ? `<span class="text-success">+${inverter.efficiency_change}%</span>` 
+                : `<span class="text-danger">${inverter.efficiency_change}%</span>`;
+            
+            row.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${inverter.inverter_id}</td>
+                <td><span class="status-badge ${statusBadgeClass}">${inverter.status}</span></td>
+                <td>${inverter.recent_faults}</td>
+                <td>${efficiencyChangeHTML}</td>
+                <td>${inverter.max_temp}°C</td>
+                <td>${formatDate(inverter.recommended_date)}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary action-btn" 
+                        onclick="showMaintenanceDetails('${inverter.inverter_id}')">
+                        Details
+                    </button>
+                </td>
+            `;
+            
+            tableBody.appendChild(row);
+        });
+    }
+    
+    // Show maintenance details
+    function showMaintenanceDetails(inverterId) {
+        // Find inverter data
+        const inverter = maintenanceData.find(item => item.inverter_id === inverterId);
+        
+        if (!inverter) return;
+        
+        // Populate modal content
+        const modalBody = document.getElementById('maintenance-modal-body');
+        
+        // Determine recommended actions based on status
+        let recommendedActions = '';
+        switch (inverter.status) {
+            case 'Urgent':
+                recommendedActions = `
+                    <li>Inspect inverter for physical damage or overheating</li>
+                    <li>Check ventilation and clean cooling fans</li>
+                    <li>Verify grid connection stability</li>
+                    <li>Test DC input circuits</li>
+                    <li>Schedule full maintenance within 48 hours</li>
+                `;
+                break;
+            case 'Monitor':
+                recommendedActions = `
+                    <li>Monitor temperature trends closely</li>
+                    <li>Perform visual inspection during next site visit</li>
+                    <li>Review efficiency patterns for further degradation</li>
+                    <li>Schedule routine maintenance within 7 days</li>
+                `;
+                break;
+            case 'Healthy':
+                recommendedActions = `
+                    <li>Continue regular monitoring</li>
+                    <li>Include in next scheduled maintenance cycle</li>
+                `;
+                break;
+        }
+        
+        modalBody.innerHTML = `
+            <div class="maintenance-details">
+                <h4>${inverter.inverter_id}</h4>
+                <div class="maintenance-status mb-3">
+                    <span class="status-badge ${inverter.status === 'Urgent' ? 'bg-danger' : inverter.status === 'Monitor' ? 'bg-warning text-dark' : 'bg-success'}">
+                        ${inverter.status}
+                    </span>
+                    <span class="ms-2">Recommended Maintenance: ${formatDate(inverter.recommended_date)}</span>
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-md-4 text-center">
+                        <div class="maintenance-metric-card p-3 border rounded">
+                            <h5>Fault Rate</h5>
+                            <div class="fs-3 ${inverter.recent_faults > 3 ? 'text-danger' : 'text-success'}">
+                                ${inverter.recent_faults}
+                            </div>
+                            <div class="text-muted">Last 7 Days</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <div class="maintenance-metric-card p-3 border rounded">
+                            <h5>Efficiency Change</h5>
+                            <div class="fs-3 ${inverter.efficiency_change < 0 ? 'text-danger' : 'text-success'}">
+                                ${inverter.efficiency_change > 0 ? '+' : ''}${inverter.efficiency_change}%
+                            </div>
+                            <div class="text-muted">vs. Historical</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <div class="maintenance-metric-card p-3 border rounded">
+                            <h5>Maximum Temp</h5>
+                            <div class="fs-3 ${inverter.max_temp > 70 ? 'text-danger' : inverter.max_temp > 65 ? 'text-warning' : 'text-success'}">
+                                ${inverter.max_temp}°C
+                            </div>
+                            <div class="text-muted">Last 7 Days</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h5>Recommended Actions</h5>
+                <ul>
+                    ${recommendedActions}
+                </ul>
+                
+                <h5>Maintenance Schedule</h5>
+                <div class="mb-3">
+                    <label for="maintenance-date" class="form-label">Maintenance Date</label>
+                    <input type="date" class="form-control" id="maintenance-date" value="${inverter.recommended_date}">
+                </div>
+                <div class="mb-3">
+                    <label for="maintenance-tech" class="form-label">Technician</label>
+                    <select class="form-select" id="maintenance-tech">
+                        <option>John Smith</option>
+                        <option>Maria Garcia</option>
+                        <option>David Chen</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="maintenance-notes" class="form-label">Notes</label>
+                    <textarea class="form-control" id="maintenance-notes" rows="3"></textarea>
+                </div>
+            </div>
+        `;
+        
+        // Update modal title
+        document.getElementById('maintenanceModalLabel').textContent = 
+            `Maintenance Details - ${inverter.inverter_id}`;
+        
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('maintenanceModal'));
+        modal.show();
+    }
+    
+    // Update degradation chart
+    function updateDegradationChart() {
+        // For demonstration, let's create synthetic efficiency trend data
+        // In a real application, you would fetch this from an API
+        const inverters = maintenanceData.map(item => item.inverter_id);
+        
+        // Create date sequence for last 30 days
+        const dates = [];
+        for (let i = 29; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            dates.push(date.toISOString().split('T')[0]);
+        }
+        
+        // Create series data for each inverter
+        const seriesData = maintenanceData.map(inverter => {
+            // Base efficiency
+            const baseEfficiency = 90 + Math.random() * 5;
+            
+            // Degradation rate based on status
+            let degradationRate = 0;
+            switch (inverter.status) {
+                case 'Urgent':
+                    degradationRate = -0.1 - Math.random() * 0.1;
+                    break;
+                case 'Monitor':
+                    degradationRate = -0.05 - Math.random() * 0.05;
+                    break;
+                case 'Healthy':
+                    degradationRate = -0.01 - Math.random() * 0.02;
+                    break;
+            }
+            
+            // Generate data
+            const data = dates.map((date, index) => {
+                return {
+                    x: date,
+                    y: (baseEfficiency + index * degradationRate).toFixed(1)
+                };
+            });
+            
+            return {
+                name: inverter.inverter_id,
+                data: data
+            };
+        });
+        
+        const options = {
+            series: seriesData,
+            chart: {
+                type: 'line',
+                height: 350,
+                zoom: {
+                    enabled: true
+                },
+                toolbar: {
+                    show: true
+                }
+            },
+            dataLabels: {
+                enabled: false
+            },
+            stroke: {
+                curve: 'straight',
+                width: 2
+            },
+            grid: {
+                row: {
+                    colors: ['#f3f3f3', 'transparent'],
+                    opacity: 0.5
+                }
+            },
+            xaxis: {
+                categories: dates,
+                labels: {
+                    rotate: -45,
+                    style: {
+                        fontSize: '10px'
+                    }
+                },
+                type: 'datetime'
+            },
+            yaxis: {
+                title: {
+                    text: 'Efficiency (%)'
+                },
+                min: 85,
+                max: 100
+            },
+            tooltip: {
+                y: {
+                    formatter: function(val) {
+                        return val + "%";
+                    }
+                }
+            },
+            legend: {
+                position: 'top'
+            },
+            colors: getInverterColorPalette()
+        };
+        
+        if (degradationChart) {
+            degradationChart.updateOptions(options);
+        } else {
+            degradationChart = new ApexCharts(document.querySelector("#degradation-chart"), options);
+            degradationChart.render();
+        }
+    }
+    
+    // Update anomaly chart
+    function updateAnomalyChart() {
+        // For demonstration, let's create synthetic anomaly data
+        // In a real application, you would fetch this from an API
+        const inverters = maintenanceData.map(item => item.inverter_id);
+        
+        // Create date sequence for last 7 days
+        const dates = [];
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            dates.push(date.toISOString().split('T')[0]);
+        }
+        
+        // Create series data for temperature and efficiency anomalies
+        const seriesData = [];
+        
+        // Add temperature series
+        seriesData.push({
+            name: 'Temperature',
+            type: 'line',
+            data: dates.map(() => Math.round(45 + Math.random() * 20))
+        });
+        
+        // Add efficiency series
+        seriesData.push({
+            name: 'Efficiency',
+            type: 'line',
+            data: dates.map(() => Math.round(85 + Math.random() * 10))
+        });
+        
+        // Add anomalies as scatter points
+        // Find inverters with urgent status
+        const urgentInverters = maintenanceData.filter(item => item.status === 'Urgent');
+        
+        if (urgentInverters.length > 0) {
+            // Create anomaly points
+            const anomalyPoints = [];
+            
+            urgentInverters.forEach(inverter => {
+                // Add 1-3 anomaly points for this inverter
+                const anomalyCount = 1 + Math.floor(Math.random() * 3);
+                
+                for (let i = 0; i < anomalyCount; i++) {
+                    // Random date index
+                    const dateIndex = Math.floor(Math.random() * dates.length);
+                    
+                    // Anomaly types: 0 = temperature, 1 = efficiency
+                    const anomalyType = Math.round(Math.random());
+                    
+                    if (anomalyType === 0) {
+                        // Temperature anomaly (high)
+                        anomalyPoints.push({
+                            x: dates[dateIndex],
+                            y: 70 + Math.random() * 10,
+                            inverterId: inverter.inverter_id,
+                            type: 'Temperature'
+                        });
+                    } else {
+                        // Efficiency anomaly (low)
+                        anomalyPoints.push({
+                            x: dates[dateIndex],
+                            y: 80 - Math.random() * 5,
+                            inverterId: inverter.inverter_id,
+                            type: 'Efficiency'
+                        });
+                    }
+                }
+            });
+            
+            // Add anomalies series
+            seriesData.push({
+                name: 'Anomalies',
+                type: 'scatter',
+                data: anomalyPoints
+            });
+        }
+        
+        const options = {
+            series: seriesData,
+            chart: {
+                height: 350,
+                type: 'line',
+                zoom: {
+                    enabled: true
+                },
+                toolbar: {
+                    show: true
+                }
+            },
+            stroke: {
+                curve: 'straight',
+                width: [3, 3, 0]
+            },
+            markers: {
+                size: [0, 0, 7],
+                colors: ['#ff5630'],
+                strokeWidth: 2,
+                hover: {
+                    size: 10
+                }
+            },
+            xaxis: {
+                categories: dates,
+                labels: {
+                    rotate: -45,
+                    style: {
+                        fontSize: '10px'
+                    }
+                }
+            },
+            yaxis: [
+                {
+                    title: {
+                        text: 'Temperature (°C)'
+                    },
+                    min: 30,
+                    max: 85
+                },
+                {
+                    opposite: true,
+                    title: {
+                        text: 'Efficiency (%)'
+                    },
+                    min: 75,
+                    max: 100
+                }
+            ],
+            tooltip: {
+                shared: false,
+                intersect: true,
+                custom: function({series, seriesIndex, dataPointIndex, w}) {
+                    if (seriesIndex === 2) { // Anomalies series
+                        const point = w.config.series[seriesIndex].data[dataPointIndex];
+                        return `
+                            <div class="p-2">
+                                <div>Inverter: ${point.inverterId}</div>
+                                <div>Type: ${point.type} Anomaly</div>
+                                <div>Value: ${point.y.toFixed(1)}${point.type === 'Temperature' ? '°C' : '%'}</div>
+                                <div>Date: ${point.x}</div>
+                            </div>
+                        `;
+                    }
+                    
+                    return `
+                        <div class="p-2">
+                            <div>${w.config.series[seriesIndex].name}</div>
+                            <div>Value: ${series[seriesIndex][dataPointIndex]}${seriesIndex === 0 ? '°C' : '%'}</div>
+                            <div>Date: ${w.config.xaxis.categories[dataPointIndex]}</div>
+                        </div>
+                    `;
+                }
+            },
+            legend: {
+                position: 'top'
+            },
+            colors: ['#ffab00', '#0078d4', '#ff5630']
+        };
+        
+        if (anomalyChart) {
+            anomalyChart.updateOptions(options);
+        } else {
+            anomalyChart = new ApexCharts(document.querySelector("#anomaly-chart"), options);
+            anomalyChart.render();
+        }
+    }
+    
+    // Update maintenance calendar
+    function updateMaintenanceCalendar() {
+        const calendarContainer = document.getElementById('maintenance-calendar');
+        calendarContainer.innerHTML = '';
+        
+        // Create calendar header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'calendar-header';
+        
+        // Month/Year title
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                          'July', 'August', 'September', 'October', 'November', 'December'];
+        
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'calendar-title';
+        titleDiv.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+        headerDiv.appendChild(titleDiv);
+        
+        // Navigation buttons
+        const navDiv = document.createElement('div');
+        navDiv.className = 'calendar-nav';
+        
+        const prevButton = document.createElement('button');
+        prevButton.innerHTML = '&laquo;';
+        prevButton.addEventListener('click', function() {
+            currentMonth--;
+            if (currentMonth < 0) {
+                currentMonth = 11;
+                currentYear--;
+            }
+            updateMaintenanceCalendar();
+        });
+        
+        const nextButton = document.createElement('button');
+        nextButton.innerHTML = '&raquo;';
+        nextButton.addEventListener('click', function() {
+            currentMonth++;
+            if (currentMonth > 11) {
+                currentMonth = 0;
+                currentYear++;
+            }
+            updateMaintenanceCalendar();
+        });
+        
+        navDiv.appendChild(prevButton);
+        navDiv.appendChild(nextButton);
+        headerDiv.appendChild(navDiv);
+        
+        calendarContainer.appendChild(headerDiv);
+        
+        // Create weekday headers
+        const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const weekdayDiv = document.createElement('div');
+        weekdayDiv.className = 'calendar-grid';
+        
+        weekdays.forEach(weekday => {
+            const dayDiv = document.createElement('div');
+            dayDiv.className = 'calendar-weekday';
+            dayDiv.textContent = weekday;
+            weekdayDiv.appendChild(dayDiv);
+        });
+        
+        calendarContainer.appendChild(weekdayDiv);
+        
+        // Calendar grid
+        const calendarGrid = document.createElement('div');
+        calendarGrid.className = 'calendar-grid';
+        
+        // Get first day of month
+        const firstDay = new Date(currentYear, currentMonth, 1);
+        const startingDay = firstDay.getDay(); // Day of week (0-6)
+        
+        // Get last day of month
+        const lastDay = new Date(currentYear, currentMonth + 1, 0);
+        const totalDays = lastDay.getDate();
+        
+        // Get current date for highlighting today
+        const today = new Date();
+        
+        // Get previous month's last days
+        const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
+        
+        // Create day cells
+        let dayCount = 1;
+        let nextMonthDay = 1;
+        
+        // Create 6 rows (max possible for a month)
+        for (let i = 0; i < 6; i++) {
+            // Skip last row if not needed
+            if (i > 0 && dayCount > totalDays) break;
+            
+            // Create 7 columns (days of week)
+            for (let j = 0; j < 7; j++) {
+                const dayCell = document.createElement('div');
+                dayCell.className = 'calendar-day';
+                
+                // Previous month days
+                if (i === 0 && j < startingDay) {
+                    const prevMonthDay = prevMonthLastDay - startingDay + j + 1;
+                    dayCell.innerHTML = `<div class="calendar-day-number text-muted">${prevMonthDay}</div>`;
+                    dayCell.classList.add('prev-month');
+                }
+                // Current month days
+                else if (dayCount <= totalDays) {
+                    dayCell.classList.add('current-month');
+                    dayCell.innerHTML = `<div class="calendar-day-number">${dayCount}</div>`;
+                    
+                    // Check if this is today
+                    if (dayCount === today.getDate() && 
+                        currentMonth === today.getMonth() && 
+                        currentYear === today.getFullYear()) {
+                        dayCell.classList.add('today');
+                    }
+                    
+                    // Check for maintenance events on this date
+                    const cellDate = new Date(currentYear, currentMonth, dayCount).toISOString().split('T')[0];
+                    const maintenanceEvents = maintenanceData.filter(item => item.recommended_date === cellDate);
+                    
+                    if (maintenanceEvents.length > 0) {
+                        // Add maintenance events
+                        maintenanceEvents.forEach(event => {
+                            const eventDiv = document.createElement('div');
+                            eventDiv.className = `maintenance-item ${event.status.toLowerCase()}`;
+                            eventDiv.textContent = event.inverter_id;
+                            eventDiv.addEventListener('click', function() {
+                                showMaintenanceDetails(event.inverter_id);
+                            });
+                            dayCell.appendChild(eventDiv);
+                        });
+                    }
+                    
+                    dayCount++;
+                }
+                // Next month days
+                else {
+                    dayCell.innerHTML = `<div class="calendar-day-number text-muted">${nextMonthDay}</div>`;
+                    dayCell.classList.add('next-month');
+                    nextMonthDay++;
+                }
+                
+                calendarGrid.appendChild(dayCell);
+            }
+        }
+        
+        calendarContainer.appendChild(calendarGrid);
+    }
+    
+    // Format date (helper function)
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        const options = { year: 'numeric', month: 'short', day: 'numeric' };
+        return date.toLocaleDateString(undefined, options);
+    }
+    
+    // Refresh maintenance data
+    function refreshMaintenanceData(start, end) {
+        fetch('/api/maintenance-prediction')
+            .then(response => response.json())
+            .then(data => {
+                maintenanceData = data;
+                
+                // Update priority table
+                updateMaintenanceTable();
+                
+                // Update degradation chart
+                updateDegradationChart();
+                
+                // Update anomaly chart
+                updateAnomalyChart();
+                
+                // Update maintenance calendar
+                updateMaintenanceCalendar();
+            })
+            .catch(error => console.error('Error refreshing maintenance data:', error));
+    }
+</script>
+{% endblock %}
