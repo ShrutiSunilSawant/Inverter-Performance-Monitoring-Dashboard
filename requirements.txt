@@ -1,0 +1,26 @@
+# Core packages
+pandas
+numpy
+matplotlib
+seaborn
+
+# Database
+psycopg2-binary
+sqlalchemy
+
+# Configuration
+python-dotenv
+
+# Statistics and Machine Learning
+scipy
+scikit-learn
+statsmodels
+
+# Airflow (optional)
+apache-airflow
+apache-airflow-providers-postgres
+
+# Utilities
+tqdm
+python-dateutil
+pytz
